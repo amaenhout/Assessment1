@@ -1,0 +1,130 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+#Intro
+
+For this assessment I used different datasources, all form the open data portal of the City Bruges which can be found here: [OpenDataBrugge](https://www.brugge.be/opendata)
+
+Since most datasources are KML and csv, I started to import the datafiles in QGIS. This because to my opinion it is easiest tool to research KML files.  
+
+Steps:
+ - 
+
+#QGIS
+![QGIS-MAP](N:/UCL/GIS/AssessmentPart1/Brugge/Assessment1Rstudio/Assessment1/QGIS-Map.png)
+
+
+#RStudio
+
+Based on found data I wanted to map the population of the different sexes in Bruges, compared to the total population.
+
+I used three different files that I found on the open data website of the City Bruges: (https://www.brugge.be/opendata)
+  - An KML file with the different Sectors in Bruges
+  - Another KML file with the different districts
+  - and an csv file with the population for Males and Females in the different districts
+  
+First I converted the KML files to shapefiles using QGIS. I was unable to find a quicker solution within rstudio.
+```{r Libraries, include=FALSE}
+# Open all needed libraries ----
+library(sp)
+library(maptools)
+library(RColorBrewer)
+library(classInt)
+library(OpenStreetMap)
+library(rgeos)
+library(tmap)
+library(tmaptools)
+library(sf)
+library(rgdal)
+library(geojsonio)
+```
+
+
+
+```{r Data (add+filter), include=FALSE}
+
+# Add Data -----
+
+#Bruges Sector
+brugessector <- read_shape("N:/UCL/GIS/AssessmentPart1/Brugge/Assessment1Rstudio/BrugesMSHP/Municipalities.shp", as.sf = TRUE)
+
+#Bruges District
+brugesdistrict <- read_shape("N:/UCL/GIS/AssessmentPart1/Brugge/Assessment1Rstudio/BrugesSHP/Bruges.shp", as.sf = TRUE)
+
+#Bruges population
+population <- read.csv("N:/UCL/GIS/AssessmentPart1/Brugge/Assessment1Rstudio/data/geslachtpersector_1.csv", header = TRUE, sep = ";")
+
+# Filter only needed columns ----
+brugessector <- brugessector[,22]
+brugesdistrict <- brugesdistrict[,c(13,20,21)]
+population <- population[,1:3]
+
+```
+
+
+
+```{r Append Data , include=FALSE}
+#Append data ----
+
+#Append Brugesdistrict data to population
+databrugesdistrict <- append_data(brugesdistrict,population, key.shp = "Secnaam", key.data = "Sectornaam", ignore.duplicates = TRUE, ignore.na = TRUE)
+
+#Add Population 
+databrugesdistrict$Population <- databrugesdistrict$Man + databrugesdistrict$Vrouw
+
+#replace datatype
+# Used source https://stackoverflow.com/questions/3418128/how-to-convert-a-factor-to-integer-numeric-without-loss-of-information
+databrugesdistrict$Oppervl <- as.numeric(levels(databrugesdistrict$Oppervl))
+
+#Drop rows where males or females is na
+databrugesdistrict <- databrugesdistrict[(!is.na(databrugesdistrict$Man)) & (!is.na(databrugesdistrict$Vrouw)), ]
+
+#Group by different Secotors
+databrugessector <- aggregate(list(databrugesdistrict$Man,databrugesdistrict$Vrouw, databrugesdistrict$Population, databrugesdistrict$Oppervl),by = list(databrugesdistrict$NAAM), sum)
+
+colnames(databrugessector) <- c("Sector", "Males", "Females","Population","Oppervl")
+
+#Append Brugessector data to population per sector to map 
+databruges <- append_data(brugessector,databrugessector, key.shp = "NAAM", key.data = "Sector", ignore.duplicates = TRUE, ignore.na = TRUE)
+
+```
+
+
+
+```{r enrich Data , include=FALSE}
+
+#sum of males females and population
+summales <- sum(databruges$Males)
+sumfemales <- sum(databruges$Females)
+sumpopulation <- sum(databruges$Population)
+
+#rate males and females per sector
+databruges$RateMales <-(databruges$Males / databruges$Population * 100)
+databruges$RateFemales <- (databruges$Females / databruges$Population * 100)
+databruges$RatePopulation <- (databruges$Population / sumpopulation * 100)
+databruges$Oppervl <- databruges$Oppervl * 0.000001
+databruges$Density <- databruges$Population / databruges$Oppervl
+
+```
+I've made three different maps in R Studio:
+- Rate Males per Sector
+- Rate Females per Sector
+- The population Density in each sector
+
+```{r create maps}
+#Create maps ----
+bruges_osm <- read_osm(databruges, type = "esri", zoom = NULL)
+
+tmap_mode("view")
+
+qtm(bruges_osm) + 
+  tm_shape(databruges) +
+  tm_polygons(c("RateMales", "RateFemales","Density"), 
+    style="jenks",
+    palette=list("Blues","Reds","Greens"),
+    title=c("Rate Males Per Sector", "Rate Females per Sector","Density per Sector" )) 
+```
+
+
