@@ -3,20 +3,41 @@ title: "R Notebook"
 output: html_notebook
 ---
 
-#Intro
+# Intro
 
 For this assessment I used different datasources, all form the open data portal of the City Bruges which can be found here: [OpenDataBrugge](https://www.brugge.be/opendata)
 
 Since most datasources are KML and csv, I started to import the datafiles in QGIS. This because to my opinion it is easiest tool to research KML files.  
 
-Steps:
- - 
+# QGIS
 
-#QGIS
-![QGIS-MAP](N:/UCL/GIS/AssessmentPart1/Brugge/Assessment1Rstudio/Assessment1/QGIS-Map.png)
+## Steps:
+
+  - Added the KML file for the municipalities in Bruges, was to detailed so dissolved     using the sector name.
+  - Opened the KML Accidentsfile, since the year of each accidents was given    
+    (2014-2016) it filtered each year and saved as a new KML layer. 
+  - Got the amount of accidents per year, and total accidents per sector (used the       function Count points in polygon)
+    Points: The Years
+    Polygon: different sectors
+  - Joint each layer to get an overview of the amount of accidents per year per 
+    sector
+  - Used the total amount of accidents to color the different sectors
+  - Used the three year amouts to create an histogram.
+
+Since I'm not satisfied enough with this map, i'll try to reproduce some things to give an better overview of the evolution of the accidents  
+
+## To do's:
+
+  - Create an low opacity for the polygons
+  - Scale the Histograms (big ones are to big, small ones are to small)
+  - add other data (2012- 2013, 2017)
+
+## Result:
+
+![QGIS-MAP of Bruges](N:/UCL/GIS/AssessmentPart1/Brugge/Assessment1Rstudio/Assessment1/QGIS-Map.png)
 
 
-#RStudio
+# RStudio
 
 Based on found data I wanted to map the population of the different sexes in Bruges, compared to the total population.
 
