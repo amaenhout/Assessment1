@@ -1,5 +1,5 @@
 ---
-title: "R Notebook"
+title: "R Notebook" 
 output: html_notebook
 ---
 
@@ -8,6 +8,38 @@ output: html_notebook
 For this assessment I used different datasources, all form the open data portal of the City Bruges which can be found here: [OpenDataBrugge](https://www.brugge.be/opendata)
 
 Since most datasources are KML and csv, I started to import the datafiles in QGIS. This because to my opinion it is easiest tool to research KML files.  
+
+
+
+
+### benefits and drawbacks
+The main benefit of using QGIS is that to get insight into different datafiles. It is possible to map very quick and use a lot of different layers. To import datafiles and get some output of it takes a longer period in Rstudio.
+
+
+
+-- data sources used in their generation 
+
+
+
+-- review of catograpic good practice
+
+
+
+-- review of workflows
+
+
+
+-- other relevant consideration
+
+
+
+
+to create the QGIS map I used a KML Accidentsfile in Bruges and a KML District file of Bruges. Both were downloaded from the open data website of Bruges. Since the year (2014-2016) of when an accident happend is included in the file I wanted to create a map with the use of the three different years to see if there was a rising or declining evolution. So I filtered each year from the file and saved them as new Layer. After I started to improve the District file, because it was very detailed into the different district I used the Sectorname column to dissolve the districts to sectors. With the accidents year layer and the sector layer I could calculate the amount of accidents per sector per year using the count opoint in polugon buildin function.
+
+
+
+
+In order to create the map in Rstudio I needed a Shapefile of the different District
 
 # QGIS
 
@@ -46,7 +78,9 @@ I used three different files that I found on the open data website of the City B
   - Another KML file with the different districts
   - and an csv file with the population for Males and Females in the different districts
   
-First I converted the KML files to shapefiles using QGIS. I was unable to find a quicker solution within rstudio.
+In order to be able to use the KML files in R studio. I converted these to shapefiles using QGIS. I was unable to find a quicker solution within rstudio.
+
+
 ```{r Libraries, include=FALSE}
 # Open all needed libraries ----
 library(sp)
@@ -60,6 +94,7 @@ library(tmaptools)
 library(sf)
 library(rgdal)
 library(geojsonio)
+
 ```
 
 
@@ -77,18 +112,23 @@ brugesdistrict <- read_shape("N:/UCL/GIS/AssessmentPart1/Brugge/Assessment1Rstud
 #Bruges population
 population <- read.csv("N:/UCL/GIS/AssessmentPart1/Brugge/Assessment1Rstudio/data/geslachtpersector_1.csv", header = TRUE, sep = ";")
 
+#Bruges Age
+ages <- read.csv("N:/UCL/GIS/AssessmentPart1/Brugge/Assessment1Rstudio/Data/leeftijdperstatsec2018.csv", header = TRUE, sep = ";", stringsAsFactors = FALSE)
+
 # Filter only needed columns ----
 brugessector <- brugessector[,22]
+brugesdistrictAge <- brugesdistrict[,c(20,21)]
 brugesdistrict <- brugesdistrict[,c(13,20,21)]
 population <- population[,1:3]
+ages <- ages[,1:107]
 
 ```
 
 
 
 ```{r Append Data , include=FALSE}
-#Append data ----
 
+#population ----
 #Append Brugesdistrict data to population
 databrugesdistrict <- append_data(brugesdistrict,population, key.shp = "Secnaam", key.data = "Sectornaam", ignore.duplicates = TRUE, ignore.na = TRUE)
 
@@ -109,6 +149,41 @@ colnames(databrugessector) <- c("Sector", "Males", "Females","Population","Opper
 
 #Append Brugessector data to population per sector to map 
 databruges <- append_data(brugessector,databrugessector, key.shp = "NAAM", key.data = "Sector", ignore.duplicates = TRUE, ignore.na = TRUE)
+
+# Age ----
+#replace na value with 0
+data <- as.data.frame(ages)
+ages[is.na(data)] <- 0
+#https://www.youtube.com/watch?v=ogLv0UTm98s
+agebins <- as.data.frame(ages$Sectornaam)
+colnames(agebins) <- c("Sectornaam")
+agebins["1-9"] <- rowSums(Filter(is.numeric,ages[,2:11]))
+agebins["10-19"] <- rowSums(Filter(is.numeric,ages[,12:21]))
+agebins["20-29"] <- rowSums(Filter(is.numeric,ages[,22:31]))
+agebins["30-39"] <- rowSums(Filter(is.numeric,ages[,32:41]))
+agebins["40-49"] <- rowSums(Filter(is.numeric,ages[,42:51]))
+agebins["50-59"] <- rowSums(Filter(is.numeric,ages[,52:61]))
+agebins["60-69"] <- rowSums(Filter(is.numeric,ages[,62:71]))
+agebins["70-79"] <- rowSums(Filter(is.numeric,ages[,72:81]))
+agebins["80-89"] <- rowSums(Filter(is.numeric,ages[,82:91]))
+agebins["90-99"] <- rowSums(Filter(is.numeric,ages[,92:101]))
+agebins["100+"] <- rowSums(Filter(is.numeric,ages[,102:107]))
+
+#agemean <- as.data.frame(ages$Sectornaam)
+#agemean["Mean"] <- rowSums(Filter(is.numeric,ages))
+
+databrugesdistrictage <- append_data(brugesdistrictAge,agebins, key.shp = "Secnaam", key.data = "Sectornaam", ignore.duplicates = TRUE, ignore.na = TRUE)
+
+#drop na values
+databrugesdistrictage <- databrugesdistrictage[!is.na(databrugesdistrictage$`1-9`),]
+
+databrugessectorage <- aggregate(list(databrugesdistrictage$`1-9`,databrugesdistrictage$`10-19`, databrugesdistrictage$`20-29`,databrugesdistrictage$`30-39`,databrugesdistrictage$`40-49`,databrugesdistrictage$`50-59`,databrugesdistrictage$`60-69`, databrugesdistrictage$`70-79`,databrugesdistrictage$`80-89`,databrugesdistrictage$`90-99`,databrugesdistrictage$`100+`),by =list(databrugesdistrictage$NAAM), sum)
+
+colnames(databrugessectorage) <- c("Sector","1-9","10-19","20-29","30-39","40-49","50-59","60-69","70-79","80-89","90-99","100+")
+
+databruges <- append_data(databruges,databrugessectorage, key.shp = "NAAM", key.data = "Sector", ignore.duplicates = TRUE, ignore.na = TRUE)
+
+
 
 ```
 
@@ -141,11 +216,11 @@ bruges_osm <- read_osm(databruges, type = "esri", zoom = NULL)
 tmap_mode("view")
 
 qtm(bruges_osm) + 
-  tm_shape(databruges) +
-  tm_polygons(c("RateMales", "RateFemales","Density"), 
+  tm_shape(databruges) + 
+  tm_polygons(c("RateMales", "RateFemales","Density","20-29"), 
     style="jenks",
-    palette=list("Blues","Reds","Greens"),
-    title=c("Rate Males Per Sector", "Rate Females per Sector","Density per Sector" )) 
+    palette=list("Blues","Reds","Greens","Blues"),
+    title=c("Rate Males Per Sector", "Rate Females per Sector","Density per Sector","# 50-59" )) 
 ```
 
 
