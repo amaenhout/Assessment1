@@ -1,0 +1,232 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+# Intro
+For this assessment I used different data sources, all form the open data portal of the City Bruges which can be found here: [OpenDataBrugge](https://www.brugge.be/opendata). 
+
+At the beginning I was not sure what I wanted to map because I had no idea what insights the open data could give me. Therefore I started to use QGIS and imported almost every interesting file that is available on the website. In my opinion QGIS is easier to get insight of your data then RStudio. This because it takes some time to create a map in RStudio if you do not have any clue what is the data about and when it is the first time you use R.
+
+Quite fast I found a one KML file that I used as a base layer, the districts in Bruges. Because this map was very detailed I used QGIS to create the dissolve function (with the provided “sectorname” as unique field) to create a new shapefile with the different sectors in Bruges. Now I could use two shapefiles (districts and sectors).
+The other data files I used in both maps are:
+
+- The road accidents from 2014 – 2016 (KML file - QGIS)
+- Population per district (csv file - RStudio)
+- Age of inhabitants per district (csv file - RStudio)
+
+For both maps I used quite a different approach on how to map the valuable data. Therefore I will review both workflows separately.
+
+In QGIS started to map the accident file and the sector file. The accidents where illustrated with points inside the sector (polygons), which was very unclear (chaotic). In the dataset the year of the accident was stated which gave me the option to create new layers for every year (filtered and saved the new layer). By using the points per polygon built-in function, I could extract the amount of accidents per sector. I did this for every year separately and the total accidents, after I joined each file based on their sector name, this gave me a table with the sectors, accidents in 2014, 2015, 2016 and the total accidents. I used the total accidents to colour the different polygons, and used the different year accidents to create histograms.
+
+In RStudio I used the different shaped files I created using QGIS, I could not find a solution to use KML files directly into RStudio. I started with the population data which I appended with the different districts. After doing some data cleaning (drop Na rows) and data expansion (add total population), I aggregated the dataframe with the Sectornames as unique value, and took the sum of the other numeric values (Male, Female, Total, Surface). Now I could append the sector shapefile in order to be able to plot the values. Hereafter I did some data enriching calculated:
+
+-	Total Males in Bruges
+-	Total Females in Bruges
+-	Total population
+
+Which made it possible to calculate:
+
+-	Rate of Males
+-	Rate of Females
+-	Rate of Population 
+-	Population density
+
+Besides the use of the population I added the age of the population per sector. After creating bins manually, I appended the district file, aggregated on the sectorname, and appended the sector file. Therefore I could use the different bins to see how diverse the ages per sector in Bruges are.
+
+After using both programs, I think that GIS is an interesting tool get insights in your data. But when you get to the point to create maps and enrich data I prefer RStudio.
+
+# Results:
+## QGIS
+
+![QGIS-MAP of Bruges](N:/UCL/GIS/AssessmentPart1/Brugge/Assessment1Rstudio/Assessment1/QGIS-Map.png)
+
+
+## RStudio
+
+```{r Libraries, include=FALSE}
+# Open all needed libraries ----
+library(sp)
+library(maptools)
+library(RColorBrewer)
+library(classInt)
+library(OpenStreetMap)
+library(rgeos)
+library(tmap)
+library(tmaptools)
+library(sf)
+library(rgdal)
+library(geojsonio)
+```
+
+```{r Data (add+filter), include=FALSE}
+
+# Add Data -----
+
+#Bruges Sector
+brugessector <- read_shape("N:/UCL/GIS/AssessmentPart1/Brugge/Assessment1Rstudio/BrugesMSHP/Municipalities.shp", as.sf = TRUE)
+
+#Bruges District
+brugesdistrict <- read_shape("N:/UCL/GIS/AssessmentPart1/Brugge/Assessment1Rstudio/BrugesSHP/Bruges.shp", as.sf = TRUE)
+
+#Bruges population
+population <- read.csv("N:/UCL/GIS/AssessmentPart1/Brugge/Assessment1Rstudio/data/geslachtpersector_1.csv", header = TRUE, sep = ";")
+
+#Bruges Age
+ages <- read.csv("N:/UCL/GIS/AssessmentPart1/Brugge/Assessment1Rstudio/Data/leeftijdperstatsec2018.csv", header = TRUE, sep = ";", stringsAsFactors = FALSE)
+
+# Filter only needed columns ----
+brugessector <- brugessector[,22]
+brugesdistrictAge <- brugesdistrict[,c(20,21)]
+brugesdistrict <- brugesdistrict[,c(13,20,21)]
+population <- population[,1:3]
+ages <- ages[,1:107]
+
+```
+
+```{r Append Data , include=FALSE}
+
+#population ----
+#Append Brugesdistrict data to population
+databrugesdistrict <- append_data(brugesdistrict,population, key.shp = "Secnaam", key.data = "Sectornaam", ignore.duplicates = TRUE, ignore.na = TRUE)
+
+#Add Population 
+databrugesdistrict$Population <- databrugesdistrict$Man + databrugesdistrict$Vrouw
+
+#replace datatype
+# Used source https://stackoverflow.com/questions/3418128/how-to-convert-a-factor-to-integer-numeric-without-loss-of-information
+databrugesdistrict$Oppervl <- as.numeric(levels(databrugesdistrict$Oppervl))
+
+#Drop rows where males or females is na
+databrugesdistrict <- databrugesdistrict[(!is.na(databrugesdistrict$Man)) & (!is.na(databrugesdistrict$Vrouw)), ]
+
+#Group by different Secotors
+databrugessector <- aggregate(list(databrugesdistrict$Man,databrugesdistrict$Vrouw, databrugesdistrict$Population, databrugesdistrict$Oppervl),by = list(databrugesdistrict$NAAM), sum)
+
+colnames(databrugessector) <- c("Sector", "Males", "Females","Population","Oppervl")
+
+#Append Brugessector data to population per sector to map 
+databruges <- append_data(brugessector,databrugessector, key.shp = "NAAM", key.data = "Sector", ignore.duplicates = TRUE, ignore.na = TRUE)
+
+# Age ----
+#replace na value with 0
+data <- as.data.frame(ages)
+ages[is.na(data)] <- 0
+#https://www.youtube.com/watch?v=ogLv0UTm98s
+agebins <- as.data.frame(ages$Sectornaam)
+colnames(agebins) <- c("Sectornaam")
+
+agebins["1-9"]   <- rowSums(Filter(is.numeric,ages[,2:11]))  
+agebins["10-19"] <- rowSums(Filter(is.numeric,ages[,12:21])) 
+agebins["20-29"] <- rowSums(Filter(is.numeric,ages[,22:31])) 
+agebins["30-39"] <- rowSums(Filter(is.numeric,ages[,32:41])) 
+agebins["40-49"] <- rowSums(Filter(is.numeric,ages[,42:51])) 
+agebins["50-59"] <- rowSums(Filter(is.numeric,ages[,52:61])) 
+agebins["60-69"] <- rowSums(Filter(is.numeric,ages[,62:71])) 
+agebins["70-79"] <- rowSums(Filter(is.numeric,ages[,72:81])) 
+agebins["80-89"] <- rowSums(Filter(is.numeric,ages[,82:91])) 
+agebins["90-99"] <- rowSums(Filter(is.numeric,ages[,92:101]))
+agebins["100+"]  <- rowSums(Filter(is.numeric,ages[,102:107]))
+
+
+#agebins["0-14"]  <- rowSums(Filter(is.numeric,ages[,2:17]))  
+#agebins["15-24"] <- rowSums(Filter(is.numeric,ages[,18:21])) 
+#agebins["25-44"] <- rowSums(Filter(is.numeric,ages[,22:31])) 
+#agebins["45-64"] <- rowSums(Filter(is.numeric,ages[,32:41])) 
+#agebins["65+"]  <- rowSums(Filter(is.numeric,ages[,42:51])) 
+#agebins["50-59"] <- rowSums(Filter(is.numeric,ages[,52:61]))
+
+#agemean <- as.data.frame(ages$Sectornaam)
+#agemean["Mean"] <- rowSums(Filter(is.numeric,ages))
+
+databrugesdistrictage <- append_data(brugesdistrictAge,agebins, key.shp = "Secnaam", key.data = "Sectornaam", ignore.duplicates = TRUE, ignore.na = TRUE)
+
+#drop na values
+databrugesdistrictage <- databrugesdistrictage[!is.na(databrugesdistrictage$`1-9`),]
+
+databrugessectorage <- aggregate(list(databrugesdistrictage$`1-9`,databrugesdistrictage$`10-19`, databrugesdistrictage$`20-29`,databrugesdistrictage$`30-39`,databrugesdistrictage$`40-49`,databrugesdistrictage$`50-59`,databrugesdistrictage$`60-69`, databrugesdistrictage$`70-79`,databrugesdistrictage$`80-89`,databrugesdistrictage$`90-99`,databrugesdistrictage$`100+`),by =list(databrugesdistrictage$NAAM), sum)
+
+colnames(databrugessectorage) <- c("Sector","1-9","10-19","20-29","30-39","40-49","50-59","60-69","70-79","80-89","90-99","100+")
+
+sumage1 <-  sum(databrugessectorage[2])
+sumage10 <- sum(databrugessectorage[3])
+sumage20 <- sum(databrugessectorage[4])
+sumage30 <- sum(databrugessectorage[5])
+sumage40 <- sum(databrugessectorage[6])
+sumage50 <- sum(databrugessectorage[7])
+sumage60 <- sum(databrugessectorage[8])
+sumage70 <- sum(databrugessectorage[9])
+sumage80 <- sum(databrugessectorage[10])
+sumage90 <- sum(databrugessectorage[11])
+sumage100<- sum(databrugessectorage[12])
+
+databrugessectorage["1-9"]   <- (databrugessectorage[2] / sumage1 )* 100
+databrugessectorage["10-19"] <- (databrugessectorage[3] / sumage10) * 100
+databrugessectorage["20-29"] <- (databrugessectorage[4] / sumage20) * 100
+databrugessectorage["30-39"] <- (databrugessectorage[5] / sumage30) * 100
+databrugessectorage["40-49"] <- (databrugessectorage[6] / sumage40) * 100
+databrugessectorage["50-59"] <- (databrugessectorage[7] / sumage50) * 100
+databrugessectorage["60-69"] <- (databrugessectorage[8] / sumage60) * 100
+databrugessectorage["70-79"] <- (databrugessectorage[9] / sumage70) * 100
+databrugessectorage["80-89"] <- (databrugessectorage[10] / sumage80) * 100
+databrugessectorage["90-99"] <- (databrugessectorage[11] / sumage90) * 100
+databrugessectorage["100+"]  <- (databrugessectorage[12] / sumage100) * 100
+
+
+databruges <- append_data(databruges,databrugessectorage, key.shp = "NAAM", key.data = "Sector", ignore.duplicates = TRUE, ignore.na = TRUE)
+
+#Create maps
+bruges_osm<- read_osm(databruges, type = "esri", zoom = NULL)
+
+```
+
+```{r enrich Data , include=FALSE}
+
+#sum of males females and population
+summales <- sum(databruges$Males)
+sumfemales <- sum(databruges$Females)
+sumpopulation <- sum(databruges$Population)
+
+#rate males and females per sector
+databruges$RateMales <-(databruges$Males / databruges$Population * 100)
+databruges$RateFemales <- (databruges$Females / databruges$Population * 100)
+databruges$RatePopulation <- (databruges$Population / sumpopulation * 100)
+databruges$Oppervl <- databruges$Oppervl * 0.000001
+databruges$Density <- databruges$Population / databruges$Oppervl
+
+```
+
+Population Map
+```{r create population map, echo=FALSE}
+#Create maps ----
+
+
+tmap_mode("view")
+
+qtm(bruges_osm) + 
+  tm_shape(databruges) + 
+  tm_polygons(c("RateMales", "RateFemales","Density"), 
+    style="jenks",
+    palette=list("Blues","Reds","Greens"),
+    title=c("Rate Males Per Sector", "Rate Females per Sector","Density per Sector")) 
+
+```
+
+
+Age Maps
+```{r create age map, echo=FALSE}
+#Create maps ----
+
+
+tmap_mode("view")
+tmap_options(limits = c(facets.view = 11))
+
+qtm(bruges_osm) + 
+  tm_shape(databruges) + 
+  tm_polygons(c("1-9","10-19","20-29","30-39","40-49","50-59","60-69","70-79","80-89","90-99","100+"), 
+    style="jenks",
+    palette="Blues",
+    title=c("1-9","10-19","20-29","30-39","40-49","50-59","60-69","70-79","80-89","90-99","100+"))
+  
+```
+  
